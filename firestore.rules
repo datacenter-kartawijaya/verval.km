@@ -1,0 +1,168 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: projects
+    // Fields: id, name, location, createdAt, createdBy
+    //
+    // Collection: certificates
+    // Fields: projectId, albumNomor, noHak, jenisHak, namaPemegang, jenisSuratUkur, noSu, tahunSu, kecamatan, kelurahan, statusBT, statusSU, statusUpload, kendala, operatorId, operatorName, tanggalPengerjaan, updatedAt
+    //
+    // Collection: master_village_data
+    // Fields: projectId, noHak, jenisHak, namaPemegang, jenisSuratUkur, noSu, tahunSu, kecamatan, kelurahan, isTaken, takenBy, takenByName, takenAt
+    //
+    // Collection: users
+    // Fields: uid, email, displayName, username, password, role, assignedProjects
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function userExists() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() && (
+        (request.auth.token.email == "datacenter.kartawijaya@gmail.com" && request.auth.token.email_verified == true) ||
+        (userExists() && getUserData().role == 'superadmin')
+      );
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        isSuperAdmin() ||
+        (userExists() && getUserData().role == 'admin')
+      );
+    }
+
+    function isOperator() {
+      return isAuthenticated() && userExists() && getUserData().role == 'operator';
+    }
+
+    function isAssignedToProject(projectId) {
+      return isAuthenticated() && (
+        isSuperAdmin() || 
+        (userExists() && (
+          getUserData().role == 'admin' || 
+          (getUserData().role == 'operator' && 
+           'assignedProjects' in getUserData() && 
+           projectId in getUserData().assignedProjects)
+        ))
+      );
+    }
+
+    function isValidProject(data) {
+      return data.keys().hasAll(['id', 'name', 'location', 'createdAt', 'createdBy']) &&
+             data.id is string &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.location is string && data.location.size() > 0 && data.location.size() < 100;
+    }
+
+    function isValidCertificate(data) {
+      return data.keys().hasAll(['projectId', 'noHak', 'jenisHak', 'statusBT', 'statusSU', 'statusUpload']) &&
+             data.projectId is string &&
+             data.noHak is string && data.noHak.size() > 0 && data.noHak.size() < 50 &&
+             data.statusBT in ['Belum', 'Sudah', 'Terverifikasi'] &&
+             data.statusSU in ['Belum', 'Sudah', 'Terverifikasi'] &&
+             data.statusUpload in ['BT Belum', 'SU Belum', 'BT SU Belum', 'Sudah Upload BTSU'];
+    }
+
+    function isValidMasterVillageData(data) {
+      return data.keys().hasAll(['projectId', 'noHak', 'jenisHak', 'isTaken']) &&
+             data.projectId is string &&
+             data.noHak is string && data.noHak.size() > 0 && data.noHak.size() < 50 &&
+             data.isTaken is bool;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'role']) &&
+             data.role in ['superadmin', 'admin', 'operator'] &&
+             (!('email' in data) || data.email is string) &&
+             (!('username' in data) || data.username is string) &&
+             (!('password' in data) || data.password is string) &&
+             (!('assignedProjects' in data) || data.assignedProjects is list);
+    }
+
+    // Check if the user being created/updated by an admin only has projects the admin manages
+    function adminOnlyAssignsManagedProjects(data) {
+      return !('assignedProjects' in data) || 
+             (userExists() && getUserData().keys().hasAll(['assignedProjects']) && 
+              data.assignedProjects.hasOnly(getUserData().assignedProjects));
+    }
+
+    function adminManagesUser(userData) {
+      return userExists() && 
+             getUserData().keys().hasAll(['assignedProjects']) && 
+             userData.role == 'operator' && 
+             userData.keys().hasAll(['assignedProjects']) && 
+             userData.assignedProjects.hasAny(getUserData().assignedProjects);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{uid} {
+      // Allow read for login (unauthenticated) and for authenticated users
+      allow read: if true; 
+      
+      allow create: if isAuthenticated() && (
+        isSuperAdmin() || 
+        (isAdmin() && request.resource.data.role == 'operator' && adminOnlyAssignsManagedProjects(request.resource.data)) ||
+        (uid == request.auth.uid && (
+          (request.resource.data.role == 'superadmin' && request.resource.data.username == 'kartawijaya') ||
+          (request.resource.data.role != 'superadmin')
+        ))
+      ) && isValidUser(request.resource.data);
+
+      allow update: if isAuthenticated() && (
+        isSuperAdmin() || 
+        (isAdmin() && resource.data.role == 'operator' && request.resource.data.role == 'operator' && adminOnlyAssignsManagedProjects(request.resource.data)) ||
+        (uid == request.auth.uid && request.resource.data.role == resource.data.role && request.resource.data.assignedProjects == resource.data.assignedProjects)
+      ) && isValidUser(request.resource.data);
+
+      allow delete: if isAuthenticated() && (
+        isSuperAdmin() || 
+        (isAdmin() && adminManagesUser(resource.data))
+      );
+    }
+
+    match /projects/{projectId} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin() && isValidProject(request.resource.data);
+      allow update: if isAdmin() && isValidProject(request.resource.data);
+      allow delete: if isSuperAdmin();
+    }
+
+    match /certificates/{certificateId} {
+      allow read: if isAuthenticated() && (isAssignedToProject(resource.data.projectId) || resource.data.operatorId == request.auth.uid);
+      allow create: if isAuthenticated() && isAssignedToProject(request.resource.data.projectId) && isValidCertificate(request.resource.data);
+      allow update: if isAuthenticated() && isAssignedToProject(resource.data.projectId) && isValidCertificate(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /master_village_data/{id} {
+      allow read: if isAuthenticated() && isAssignedToProject(resource.data.projectId);
+      allow create: if isAdmin() && isValidMasterVillageData(request.resource.data);
+      allow update: if isAuthenticated() && (
+        isAdmin() || 
+        (isOperator() && isAssignedToProject(resource.data.projectId) && 
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isTaken', 'takenBy', 'takenByName', 'takenAt']))
+      ) && isValidMasterVillageData(request.resource.data);
+      allow delete: if isAdmin();
+    }
+  }
+}

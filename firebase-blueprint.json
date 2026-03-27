@@ -1,0 +1,93 @@
+{
+  "entities": {
+    "Project": {
+      "title": "Project",
+      "description": "Definisi proyek BPN (misalnya Depok, Jombang).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID proyek unik." },
+        "name": { "type": "string", "description": "Nama proyek (misal: BPN Kota Depok)." },
+        "location": { "type": "string", "description": "Lokasi proyek." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Waktu pembuatan proyek." },
+        "createdBy": { "type": "string", "description": "UID pembuat proyek." }
+      },
+      "required": ["id", "name", "location", "createdAt", "createdBy"]
+    },
+    "Certificate": {
+      "title": "Certificate",
+      "description": "Data sertifikat tanah yang sedang diverifikasi.",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string", "description": "ID proyek terkait." },
+        "noHak": { "type": "string", "description": "Nomor Hak." },
+        "jenisHak": { "type": "string", "description": "Jenis Hak (Milik/HGB/dll)." },
+        "namaPemegang": { "type": "string", "description": "Nama Pemegang Hak." },
+        "noSu": { "type": "string", "description": "Nomor Surat Ukur." },
+        "tahunSu": { "type": "string", "description": "Tahun Surat Ukur." },
+        "kecamatan": { "type": "string", "description": "Kecamatan." },
+        "kelurahan": { "type": "string", "description": "Kelurahan/Desa." },
+        "statusVerifikasi": { "type": "string", "enum": ["Belum", "Sudah", "Kendala"], "description": "Status verifikasi data." },
+        "statusUpload": { "type": "string", "enum": ["Belum", "Sudah"], "description": "Status upload BTSU." },
+        "kendala": { "type": "string", "description": "Catatan kendala jika ada." },
+        "operatorId": { "type": "string", "description": "UID operator yang mengerjakan." },
+        "operatorName": { "type": "string", "description": "Nama operator." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Waktu update terakhir." }
+      },
+      "required": ["projectId", "noHak", "jenisHak", "statusVerifikasi"]
+    },
+    "User": {
+      "title": "User",
+      "description": "Profil pengguna (Operator/Admin).",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID." },
+        "email": { "type": "string", "description": "Email pengguna." },
+        "displayName": { "type": "string", "description": "Nama tampilan." },
+        "username": { "type": "string", "description": "Username untuk login kredensial." },
+        "password": { "type": "string", "description": "Password untuk login kredensial." },
+        "role": { "type": "string", "enum": ["superadmin", "admin", "operator"], "description": "Peran pengguna." },
+        "assignedProjects": { "type": "array", "items": { "type": "string" }, "description": "Daftar ID proyek yang ditugaskan." }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "MasterVillageData": {
+      "title": "MasterVillageData",
+      "description": "Data desa master yang diupload oleh admin untuk diambil oleh operator.",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string", "description": "ID proyek terkait." },
+        "noHak": { "type": "string", "description": "Nomor Hak." },
+        "jenisHak": { "type": "string", "description": "Jenis Hak (Milik/HGB/dll)." },
+        "namaPemegang": { "type": "string", "description": "Nama Pemegang Hak." },
+        "jenisSuratUkur": { "type": "string", "description": "Jenis Surat Ukur." },
+        "noSu": { "type": "string", "description": "Nomor Surat Ukur." },
+        "tahunSu": { "type": "string", "description": "Tahun Surat Ukur." },
+        "kecamatan": { "type": "string", "description": "Kecamatan." },
+        "kelurahan": { "type": "string", "description": "Kelurahan/Desa." },
+        "isTaken": { "type": "boolean", "description": "Apakah data sudah diambil oleh operator." },
+        "takenBy": { "type": "string", "description": "UID operator yang mengambil." },
+        "takenByName": { "type": "string", "description": "Nama operator yang mengambil." },
+        "takenAt": { "type": "string", "format": "date-time", "description": "Waktu pengambilan." }
+      },
+      "required": ["projectId", "noHak", "jenisHak", "isTaken"]
+    }
+  },
+  "firestore": {
+    "/projects/{projectId}": {
+      "schema": "Project",
+      "description": "Koleksi proyek."
+    },
+    "/certificates/{certificateId}": {
+      "schema": "Certificate",
+      "description": "Koleksi data sertifikat."
+    },
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "Koleksi profil pengguna."
+    },
+    "/master_village_data/{id}": {
+      "schema": "MasterVillageData",
+      "description": "Koleksi data desa master."
+    }
+  }
+}

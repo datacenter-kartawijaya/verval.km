@@ -1,0 +1,5 @@
+{
+  "name": "Verval BPN Multi-Project",
+  "description": "Sistem Verifikasi dan Validasi Data Pertanahan Multi-Project untuk BPN (Badan Pertanahan Nasional). Mendukung pemantauan real-time untuk banyak operator dan proyek.",
+  "requestFramePermissions": []
+}
