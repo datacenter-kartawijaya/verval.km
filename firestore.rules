@@ -36,20 +36,20 @@ service cloud.firestore {
 
     function isSuperAdmin() {
       return isAuthenticated() && (
-        (request.auth.token.email == "datacenter.kartawijaya@gmail.com" && request.auth.token.email_verified == true) ||
-        (userExists() && getUserData().role == 'superadmin')
+        (request.auth.token.email == "datacenter.kartawijaya@gmail.com") ||
+        (userExists() && (getUserData().role == 'superadmin' || getUserData().username == 'kartawijaya'))
       );
     }
 
     function isAdmin() {
       return isAuthenticated() && (
         isSuperAdmin() ||
-        (userExists() && getUserData().role == 'admin')
+        (userExists() && (getUserData().role == 'admin' || getUserData().role == 'superadmin'))
       );
     }
 
     function isOperator() {
-      return isAuthenticated() && userExists() && getUserData().role == 'operator';
+      return isAuthenticated() && userExists() && (getUserData().role == 'operator' || getUserData().role == 'admin' || getUserData().role == 'superadmin');
     }
 
     function isAssignedToProject(projectId) {
@@ -57,9 +57,10 @@ service cloud.firestore {
         isSuperAdmin() || 
         (userExists() && (
           getUserData().role == 'admin' || 
+          getUserData().role == 'superadmin' ||
           (getUserData().role == 'operator' && 
            'assignedProjects' in getUserData() && 
-           projectId in getUserData().assignedProjects)
+           getUserData().assignedProjects.hasAny([projectId]))
         ))
       );
     }
@@ -67,24 +68,36 @@ service cloud.firestore {
     function isValidProject(data) {
       return data.keys().hasAll(['id', 'name', 'location', 'createdAt', 'createdBy']) &&
              data.id is string &&
-             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
-             data.location is string && data.location.size() > 0 && data.location.size() < 100;
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             data.location is string && data.location.size() > 0 && data.location.size() < 200 &&
+             (!('description' in data) || data.description is string) &&
+             data.createdAt is timestamp &&
+             data.createdBy is string &&
+             (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
 
     function isValidCertificate(data) {
       return data.keys().hasAll(['projectId', 'noHak', 'jenisHak', 'statusBT', 'statusSU', 'statusUpload']) &&
              data.projectId is string &&
-             data.noHak is string && data.noHak.size() > 0 && data.noHak.size() < 50 &&
+             data.noHak is string && data.noHak.size() > 0 && data.noHak.size() < 100 &&
              data.statusBT in ['Belum', 'Sudah', 'Terverifikasi'] &&
              data.statusSU in ['Belum', 'Sudah', 'Terverifikasi'] &&
-             data.statusUpload in ['BT Belum', 'SU Belum', 'BT SU Belum', 'Sudah Upload BTSU'];
+             data.statusUpload in ['BT Belum', 'SU Belum', 'BT SU Belum', 'Sudah Upload BTSU'] &&
+             (!('operatorId' in data) || data.operatorId is string) &&
+             (!('operatorName' in data) || data.operatorName is string) &&
+             (!('updatedAt' in data) || data.updatedAt is timestamp) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
     function isValidMasterVillageData(data) {
       return data.keys().hasAll(['projectId', 'noHak', 'jenisHak', 'isTaken']) &&
              data.projectId is string &&
-             data.noHak is string && data.noHak.size() > 0 && data.noHak.size() < 50 &&
-             data.isTaken is bool;
+             data.noHak is string && data.noHak.size() > 0 && data.noHak.size() < 100 &&
+             data.isTaken is bool &&
+             (!('takenBy' in data) || data.takenBy is string) &&
+             (!('takenByName' in data) || data.takenByName is string) &&
+             (!('takenAt' in data) || data.takenAt is timestamp) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
     function isValidUser(data) {
@@ -93,22 +106,28 @@ service cloud.firestore {
              (!('email' in data) || data.email is string) &&
              (!('username' in data) || data.username is string) &&
              (!('password' in data) || data.password is string) &&
-             (!('assignedProjects' in data) || data.assignedProjects is list);
+             (!('assignedProjects' in data) || data.assignedProjects is list) &&
+             (!('displayName' in data) || data.displayName is string) &&
+             (!('photoURL' in data) || data.photoURL is string) &&
+             (!('createdAt' in data) || data.createdAt is timestamp) &&
+             (!('lastLogin' in data) || data.lastLogin is timestamp);
     }
 
     // Check if the user being created/updated by an admin only has projects the admin manages
     function adminOnlyAssignsManagedProjects(data) {
-      return !('assignedProjects' in data) || 
+      return isSuperAdmin() || 
+             !('assignedProjects' in data) || 
              (userExists() && getUserData().keys().hasAll(['assignedProjects']) && 
               data.assignedProjects.hasOnly(getUserData().assignedProjects));
     }
 
     function adminManagesUser(userData) {
-      return userExists() && 
-             getUserData().keys().hasAll(['assignedProjects']) && 
-             userData.role == 'operator' && 
-             userData.keys().hasAll(['assignedProjects']) && 
-             userData.assignedProjects.hasAny(getUserData().assignedProjects);
+      return isSuperAdmin() || 
+             (userExists() && 
+              getUserData().keys().hasAll(['assignedProjects']) && 
+              userData.role == 'operator' && 
+              userData.keys().hasAll(['assignedProjects']) && 
+              userData.assignedProjects.hasAny(getUserData().assignedProjects));
     }
 
     // ===============================================================
@@ -135,6 +154,7 @@ service cloud.firestore {
       ) && isValidUser(request.resource.data);
 
       allow delete: if isAuthenticated() && (
+        request.auth.token.email == "datacenter.kartawijaya@gmail.com" || 
         isSuperAdmin() || 
         (isAdmin() && adminManagesUser(resource.data))
       );
@@ -144,14 +164,14 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create: if isAdmin() && isValidProject(request.resource.data);
       allow update: if isAdmin() && isValidProject(request.resource.data);
-      allow delete: if isSuperAdmin();
+      allow delete: if isAuthenticated() && (request.auth.token.email == "datacenter.kartawijaya@gmail.com" || isSuperAdmin());
     }
 
     match /certificates/{certificateId} {
       allow read: if isAuthenticated() && (isAssignedToProject(resource.data.projectId) || resource.data.operatorId == request.auth.uid);
       allow create: if isAuthenticated() && isAssignedToProject(request.resource.data.projectId) && isValidCertificate(request.resource.data);
       allow update: if isAuthenticated() && isAssignedToProject(resource.data.projectId) && isValidCertificate(request.resource.data);
-      allow delete: if isAdmin();
+      allow delete: if isAuthenticated() && (request.auth.token.email == "datacenter.kartawijaya@gmail.com" || isAdmin());
     }
 
     match /master_village_data/{id} {
@@ -162,7 +182,7 @@ service cloud.firestore {
         (isOperator() && isAssignedToProject(resource.data.projectId) && 
          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isTaken', 'takenBy', 'takenByName', 'takenAt']))
       ) && isValidMasterVillageData(request.resource.data);
-      allow delete: if isAdmin();
+      allow delete: if isAuthenticated() && (request.auth.token.email == "datacenter.kartawijaya@gmail.com" || isAdmin());
     }
   }
 }
