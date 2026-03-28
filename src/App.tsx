@@ -389,9 +389,16 @@ export default function App() {
   const effectiveRole = useMemo(() => {
     if (customUser?.username === 'kartawijaya') return 'superadmin';
     if (userProfile?.role) return userProfile.role;
-    if (user?.email === "datacenter.kartawijaya@gmail.com" && user.emailVerified) return 'superadmin';
+    if (user?.email === "datacenter.kartawijaya@gmail.com") return 'superadmin';
     return null;
   }, [userProfile, user, customUser]);
+
+  useEffect(() => {
+    console.log('Effective Role:', effectiveRole);
+    console.log('User Profile:', userProfile);
+    console.log('User Email:', user?.email);
+    console.log('User UID:', user?.uid);
+  }, [effectiveRole, userProfile, user]);
 
   // --- Auth & Profile ---
   useEffect(() => {
@@ -1026,6 +1033,34 @@ export default function App() {
     }
   };
 
+  const handleDeleteCert = async (id: string) => {
+    console.log('Initiating delete for cert:', id);
+    if (!id) {
+      toast.error('Gagal menghapus: ID tidak ditemukan');
+      return;
+    }
+    setConfirmDialog({
+      show: true,
+      title: 'Hapus Data Verifikasi',
+      message: 'Apakah Anda yakin ingin menghapus data verifikasi ini?',
+      onConfirm: async () => {
+        console.log('Confirming delete for cert:', id);
+        toast.info('Sedang menghapus data...');
+        try {
+          await deleteDoc(doc(db, 'certificates', id));
+          toast.success('Data sertifikat berhasil dihapus');
+          console.log('Delete successful');
+        } catch (err) {
+          console.error('Delete failed:', err);
+          toast.error('Gagal menghapus data: ' + (err instanceof Error ? err.message : String(err)));
+          handleFirestoreError(err, OperationType.DELETE, `certificates/${id}`);
+        } finally {
+          setConfirmDialog(null);
+        }
+      }
+    });
+  };
+
   const toggleUploadStatus = async (id: string, current: Certificate['statusUpload']) => {
     const statuses: Certificate['statusUpload'][] = ['BT Belum', 'SU Belum', 'BT SU Belum', 'Sudah Upload BTSU'];
     const nextIndex = (statuses.indexOf(current) + 1) % statuses.length;
@@ -1560,6 +1595,15 @@ export default function App() {
                             >
                               <Check className="w-4 h-4" />
                             </button>
+                            {(effectiveRole === 'admin' || effectiveRole === 'superadmin') && (
+                              <button 
+                                onClick={() => handleDeleteCert(cert.id!)}
+                                className="p-2 rounded-lg bg-white border border-red-200 text-red-600 hover:bg-red-50 shadow-sm"
+                                title="Hapus Data"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -2039,8 +2083,21 @@ export default function App() {
                 />
               </div>
               
-              <div className="flex gap-3 pt-6 col-span-2">
+              <div className="flex flex-col sm:flex-row gap-3 pt-6 col-span-2">
                 <Button variant="secondary" className="flex-1" onClick={() => setEditingCert(null)}>Batal</Button>
+                {(effectiveRole === 'admin' || effectiveRole === 'superadmin') && (
+                  <Button 
+                    variant="danger" 
+                    className="flex-1" 
+                    onClick={() => {
+                      const id = editingCert.id;
+                      setEditingCert(null);
+                      handleDeleteCert(id!);
+                    }}
+                  >
+                    Hapus Data
+                  </Button>
+                )}
                 <Button type="submit" className="flex-1">Simpan Perubahan</Button>
               </div>
             </form>
