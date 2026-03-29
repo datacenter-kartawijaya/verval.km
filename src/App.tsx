@@ -512,17 +512,16 @@ export default function App() {
 
   // --- Users Filtering for Dashboard/Operators View ---
   const visibleUsers = useMemo(() => {
-    // Filter duplicates: prefer documents that might have been migrated
+    // Deduplicate users by username or email to handle multiple session records
     const uniqueMap = new Map<string, UserProfile>();
     allUsers.forEach(u => {
-      // Use email or username as the unique key
-      const key = u.email || u.username || u.uid;
+      // For users with a username, use that as the key. Otherwise use email or UID.
+      const key = u.username || u.email || u.uid;
       const existing = uniqueMap.get(key);
       
-      // If we find a duplicate, we prefer the one that is likely the "live" one.
-      // Since we don't have a perfect way to tell, we'll just keep the last one found
-      // or the one that has more data. For now, just keeping the one with the most recent info.
-      if (!existing || (u.uid && u.uid.length > 15)) { // Firebase UIDs are usually long
+      // If we have a duplicate, we prefer the one that is likely the "live" one.
+      // Firebase anonymous UIDs and Google UIDs are typically longer than our 'custom_' prefix ones.
+      if (!existing || u.uid.length > existing.uid.length) {
         uniqueMap.set(key, u);
       }
     });
@@ -531,7 +530,7 @@ export default function App() {
     if (effectiveRole === 'superadmin') return baseUsers;
     if (effectiveRole === 'admin' && activeProject) {
       // Admin sees operators assigned to their active project
-      return baseUsers.filter(u => u.assignedProjects.includes(activeProject.id));
+      return baseUsers.filter(u => u.assignedProjects && u.assignedProjects.includes(activeProject.id));
     }
     return [];
   }, [allUsers, effectiveRole, activeProject]);
@@ -1804,13 +1803,7 @@ export default function App() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {visibleUsers
-                      .filter(u => u.role !== 'superadmin')
-                      .filter(u => {
-                        // Only show master records for credential users (uid starts with custom_)
-                        // Google users don't have a username field and have stable UIDs
-                        if (u.username && !u.uid.startsWith('custom_')) return false;
-                        return true;
-                      })
+                      .filter(u => u.uid !== user?.uid) // Hide current user instead of all superadmins
                       .map((u) => (
                       <tr key={u.uid} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4">
